@@ -60,6 +60,7 @@
     result.enabled = byId("enabled").checked;
     result.priority = integer("priority", "优先级");
     result.parse_retry = integer("parse-retry", "额外解析重试次数", 0, 8);
+    result.max_stream_buffer_bytes = integer("stream-buffer-bytes", "流式原始缓冲上限", 1024, 134217728);
     result.on_parse_failure = byId("parse-failure").value;
     result.prefix_cache = byId("prefix-cache").checked;
     result.cache_ttl = byId("cache-ttl").value;
@@ -89,6 +90,9 @@
         throw new Error("协议标签须以 ASCII 字母开头，最多 64 位，可包含数字、下划线和连字符。");
       }
       if (tag) tags[name] = tag; else delete tags[name];
+    }
+    if (validate && new Set([tags.tool || "CPA_TC", tags.arg || "CPA_TA", tags.result || "CPA_TR"]).size !== 3) {
+      throw new Error("应用默认值后，工具、参数和结果标签必须互不相同。");
     }
     if (Object.keys(tags).length) result.tag_group = tags; else delete result.tag_group;
     return result;
@@ -185,6 +189,7 @@
     byId("enabled").checked = config.enabled !== false;
     byId("priority").value = config.priority ?? 0;
     byId("parse-retry").value = config.parse_retry ?? 1;
+    byId("stream-buffer-bytes").value = config.max_stream_buffer_bytes ?? 8388608;
     byId("parse-failure").value = config.on_parse_failure ?? "parse_failed_to_content";
     byId("prefix-cache").checked = config.prefix_cache !== false;
     byId("cache-ttl").value = config.cache_ttl ?? "5m";

@@ -14,8 +14,10 @@
 - 把文本工具调用恢复为 OpenAI Chat 原生工具调用；宿主再转换回 Claude、
   Responses 或 Gemini 客户端格式。工具的实际执行仍由客户端负责。
 - 增量流式解析，支持标签跨分片、EOF 收尾、reasoning delta 和上游句柄清理。
-- 非流式解析失败可重试；校验 `none`、`required`、指定工具、并行限制及工具声明。
+- 非流式解析失败可重试；校验 `none`、`required`、指定工具、Gemini 允许名称子集、并行限制及工具声明。
   已输出部分内容的流式请求不会重启重试。
+- 普通正文无需等待换行或 EOF 即可输出；协议标签及 Markdown 围栏前缀仍保留必要的判定缓冲。
+  工具参数仍在工具块闭合后一次发出，不自动校验或修复结构化参数 JSON。
 
 ## 前缀缓存
 
@@ -63,6 +65,7 @@ plugins:
       rules:
         - models: ["你的模型别名"]
       parse_retry: 1
+      max_stream_buffer_bytes: 8388608
       on_parse_failure: parse_failed_to_content
       prefix_cache: true
       cache_ttl: "5m"
@@ -75,10 +78,12 @@ plugins:
   `codex`、`gemini`；名为 `gateway` 的 OpenAI 兼容配置组对应
   **`openai-compatible-gateway`**。
 - `parse_retry` 为额外非流式解析次数，范围 0–8，默认 1。
+- `max_stream_buffer_bytes` 默认 8388608（8 MiB），范围 1024–134217728。限制单个未完成工具调用的原始参数、元数据及当前行缓冲，或未完成协议／围栏行；超限立即终止上游并返回错误，不静默截断参数。普通正文会增量发送，不计入累计响应限制。
+- 原始流式诊断只保留最多 64 KiB 的头尾内容，并标明省略的字节数；该诊断预算独立于原始协议缓冲上限，不限制客户端接收的正文长度。
 - `on_parse_failure` 可用 `error` 或默认的 `parse_failed_to_content`；工具选择和
   未声明工具违规不会被降级为正文。
 - `fence_token` 可指定固定 ASCII 分隔符，不应每轮随机生成。
-- `tag_group` 可覆盖 `{tool, arg, result}` 标签名。
+- `tag_group` 可覆盖 `{tool, arg, result}` 标签名；应用默认值后三个标签必须互异。
 - 配置验证成功才会原子替换旧快照；未知宿主管理元数据（如 `store`）会被忽略。
 
 ## 自定义配置页面
@@ -95,7 +100,7 @@ plugins:
 `/v8/management/config/plugins/configs/tool-emulation`。
 
 输入**管理密钥**（不是客户端 API key），点击“连接并加载”。页面支持启用状态／
-优先级、规则新增／删除／排序、解析重试／失败策略、缓存 TTL、协议高级设置及
+优先级、规则新增／删除／排序、解析重试／失败策略、流式缓冲上限、缓存 TTL、协议高级设置及
 待保存配置预览。保存时保留未显示的插件字段，并通过 ETag／If-Match 防止覆盖
 其他页面的并发修改；重新加载前会提示确认丢弃未保存内容。
 

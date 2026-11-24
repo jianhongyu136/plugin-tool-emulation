@@ -49,11 +49,13 @@ type mainFixture struct {
 }
 
 type mainFixtureOptions struct {
-	emptyModelRules bool
-	privacyMode     string
-	privacyPriority int
-	privacyBuiltins bool
-	replyText       func([]byte) string
+	emptyModelRules      bool
+	privacyMode          string
+	privacyPriority      int
+	privacyBuiltins      bool
+	replyText            func([]byte) string
+	streamHandler        http.HandlerFunc
+	maxStreamBufferBytes int
 }
 
 func startMainFixture(t *testing.T, emptyModelRules ...bool) *mainFixture {
@@ -69,6 +71,9 @@ func startMainFixtureWithOptions(t *testing.T, options mainFixtureOptions) *main
 	root, errRoot := os.Getwd()
 	if errRoot != nil {
 		t.Fatal(errRoot)
+	}
+	if fixtureRoot := os.Getenv("TOOLEMU_INTEGRATION_ROOT"); fixtureRoot != "" {
+		root = fixtureRoot
 	}
 	executable, library := "cli-proxy-api", "tool-emulation-linux-amd64.so"
 	if runtime.GOOS == "windows" {
@@ -96,6 +101,10 @@ func startMainFixtureWithOptions(t *testing.T, options mainFixtureOptions) *main
 		replyText := nativeWeatherText
 		if options.replyText != nil {
 			replyText = options.replyText(body)
+		}
+		if doc.Get("stream").Bool() && options.streamHandler != nil {
+			options.streamHandler(writer, request)
+			return
 		}
 		if request.URL.Path == "/v1/messages" {
 			if doc.Get("stream").Bool() {
@@ -168,6 +177,10 @@ func startMainFixtureWithOptions(t *testing.T, options mainFixtureOptions) *main
 		},
 		"plugins":  map[string]any{"enabled": true, "dir": pluginDir, "configs": map[string]any{"tool-emulation": map[string]any{"enabled": true, "fence_" + "token": "SEED1234", "rules": []any{map[string]any{"provider": "openai-compatible-test-provider", "models": []string{"test-model", "filter-model"}}, map[string]any{"provider": "claude", "models": []string{"claude-model"}}}}}},
 		"requests": map[string]any{"payload": map[string]any{"filter": []any{map[string]any{"models": []any{map[string]any{"name": "filter-*", "protocol": "openai"}}, "params": []string{"messages.1"}}}}},
+	}
+	if options.maxStreamBufferBytes > 0 {
+		pluginConfigs := config["plugins"].(map[string]any)["configs"].(map[string]any)
+		pluginConfigs[pluginIdentifier].(map[string]any)["max_stream_buffer_bytes"] = options.maxStreamBufferBytes
 	}
 	if options.emptyModelRules {
 		pluginConfigs := config["plugins"].(map[string]any)["configs"].(map[string]any)

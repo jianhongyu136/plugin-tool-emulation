@@ -51,7 +51,7 @@ func userIndex(doc *ojson.Doc, array string, last bool) int {
 }
 
 func appendTurnChoice(doc *ojson.Doc, shape toolemu.UpstreamShape, choice toolemu.ToolChoice) error {
-	if choice.Kind == toolemu.ToolChoiceKindAuto && !choice.DisableParallel {
+	if choice.Kind == toolemu.ToolChoiceKindAuto && !choice.DisableParallel && len(choice.AllowedNames) == 0 {
 		return nil
 	}
 	instruction := "Tool constraints for THIS response (override earlier examples): "
@@ -64,6 +64,9 @@ func appendTurnChoice(doc *ojson.Doc, shape toolemu.UpstreamShape, choice toolem
 		instruction += fmt.Sprintf("You MUST call the tool named %q, and no other tool.", choice.Name)
 	default:
 		instruction += "Call tools only when needed."
+	}
+	if allowed := choice.AllowedNamesInstruction(); allowed != "" {
+		instruction += " " + allowed
 	}
 	if choice.DisableParallel {
 		instruction += " Emit at most one tool call."

@@ -30,6 +30,7 @@ type ToolChoice struct {
 	Kind            ToolChoiceKind
 	Name            string // only for Kind == ToolChoiceKindNamed
 	DisableParallel bool
+	AllowedNames    []string // when non-empty, restrict calls to this declared subset
 }
 
 // Convenience constructors.
@@ -42,6 +43,33 @@ var (
 // ToolChoiceNamed returns a Named tool_choice.
 func ToolChoiceNamed(name string) ToolChoice {
 	return ToolChoice{Kind: ToolChoiceKindNamed, Name: name}
+}
+
+func (c ToolChoice) allowsToolName(name string) bool {
+	if c.Kind == ToolChoiceKindNone || c.Kind == ToolChoiceKindNamed && name != c.Name {
+		return false
+	}
+	if len(c.AllowedNames) == 0 {
+		return true
+	}
+	for _, allowed := range c.AllowedNames {
+		if name == allowed {
+			return true
+		}
+	}
+	return false
+}
+
+// AllowedNamesInstruction renders the allowed subset deterministically, without
+// changing the cacheable tool declarations when per-turn restrictions change.
+func (c ToolChoice) AllowedNamesInstruction() string {
+	if len(c.AllowedNames) == 0 {
+		return ""
+	}
+	names := append([]string(nil), c.AllowedNames...)
+	sort.Strings(names)
+	raw, _ := json.Marshal(names)
+	return fmt.Sprintf("Only these tool names are permitted for this response: %s. Do not call any other tool.", raw)
 }
 
 const protocolCallableText = `<tool_protocol>
@@ -169,16 +197,21 @@ func renderProtocolTemplate(template string, proto protocolSettings, choiceClaus
 }
 
 func renderToolChoiceClause(c ToolChoice) string {
+	var clause string
 	switch c.Kind {
 	case ToolChoiceKindNone:
-		return "You MUST NOT call any tool in this response. Answer in natural language only."
+		clause = "You MUST NOT call any tool in this response. Answer in natural language only."
 	case ToolChoiceKindRequired:
-		return "You MUST call at least one tool in this response."
+		clause = "You MUST call at least one tool in this response."
 	case ToolChoiceKindNamed:
-		return fmt.Sprintf(`You MUST call the tool named %q in this response.`, c.Name)
+		clause = fmt.Sprintf(`You MUST call the tool named %q in this response.`, c.Name)
 	default:
-		return "You MAY call a tool when helpful, or answer directly without a tool call."
+		clause = "You MAY call a tool when helpful, or answer directly without a tool call."
 	}
+	if allowed := c.AllowedNamesInstruction(); allowed != "" {
+		clause += " " + allowed
+	}
+	return clause
 }
 
 // canonicalJSON re-serializes raw JSON with sorted object keys, no extra whitespace.

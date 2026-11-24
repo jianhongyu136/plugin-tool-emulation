@@ -49,6 +49,13 @@ func (e ToolChoiceValidationError) Error() string {
 	if e.Choice.DisableParallel && len(e.Parsed.ToolCalls) > 1 {
 		return "toolemu: tool_choice disable_parallel_tool_use forbids multiple tool calls"
 	}
+	if len(e.Choice.AllowedNames) > 0 {
+		for _, call := range e.Parsed.ToolCalls {
+			if !e.Choice.allowsToolName(call.Name) {
+				return "toolemu: tool_choice allowedFunctionNames forbids this tool"
+			}
+		}
+	}
 	switch e.Choice.Kind {
 	case ToolChoiceKindNone:
 		return "toolemu: tool_choice none forbids tool calls"
@@ -80,6 +87,11 @@ func ValidateToolChoice(parsed Parsed, choice ToolChoice) error {
 			if call.Name != choice.Name {
 				return ToolChoiceValidationError{Choice: choice, Parsed: parsed}
 			}
+		}
+	}
+	for _, call := range parsed.ToolCalls {
+		if !choice.allowsToolName(call.Name) {
+			return ToolChoiceValidationError{Choice: choice, Parsed: parsed}
 		}
 	}
 	if choice.DisableParallel && len(parsed.ToolCalls) > 1 {

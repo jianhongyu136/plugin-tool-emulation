@@ -1,6 +1,7 @@
 package toolemu
 
 import (
+	"bytes"
 	"fmt"
 	"strconv"
 	"strings"
@@ -40,9 +41,15 @@ type StreamParser struct {
 	proto        protocolSettings
 	argsRenderer toolArgRenderer
 
-	state   streamState
-	line    strings.Builder
-	rawText strings.Builder
+	state            streamState
+	line             bytes.Buffer
+	lineEmitted      bool
+	lineLiteral      bool
+	lineProtocolHeld bool
+	protocolPrefixes []string
+	rawText          streamDiagnosticText
+	maxBufferedBytes int
+	argsBytes        int
 
 	toolIndex int
 	toolName  string
@@ -71,10 +78,22 @@ func NewStreamParser(events StreamEvents, meta UpstreamMeta, fenceToken string) 
 
 // NewStreamParserWithTagGroup creates a parser using the selected raw protocol tag group.
 func NewStreamParserWithTagGroup(events StreamEvents, meta UpstreamMeta, fenceToken string, tagGroup ToolEmulationTagGroup) *StreamParser {
+	return NewStreamParserWithLimits(events, meta, fenceToken, tagGroup, StreamParserLimits{})
+}
+
+// NewStreamParserWithLimits creates a parser with an explicit raw buffer budget.
+func NewStreamParserWithLimits(events StreamEvents, meta UpstreamMeta, fenceToken string, tagGroup ToolEmulationTagGroup, limits StreamParserLimits) *StreamParser {
+	maximum := limits.MaxBufferedBytes
+	if maximum <= 0 {
+		maximum = DefaultMaxStreamBufferBytes
+	}
+	proto := effectiveProtocolSettings(fenceToken, tagGroup)
 	return &StreamParser{
-		events: events,
-		meta:   meta,
-		proto:  effectiveProtocolSettings(fenceToken, tagGroup),
+		events:           events,
+		meta:             meta,
+		proto:            proto,
+		protocolPrefixes: streamProtocolPrefixes(proto),
+		maxBufferedBytes: maximum,
 	}
 }
 
@@ -88,35 +107,28 @@ func (p *StreamParser) SetToolSpecs(tools []ToolSpec) {
 
 // Feed processes a chunk of text from the upstream stream.
 func (p *StreamParser) Feed(chunk string) {
-	if p == nil {
+	if p == nil || p.failed {
 		return
 	}
 	p.rawText.WriteString(chunk)
-	if p.failed {
-		return
-	}
-	var data []byte
+	data := chunk
 	if len(p.pendingBytes) > 0 {
-		data = append(p.pendingBytes, []byte(chunk)...)
-		p.pendingBytes = p.pendingBytes[:0]
-	} else {
-		data = []byte(chunk)
+		data = string(p.pendingBytes) + chunk
+		p.pendingBytes = nil
 	}
-	valid := validUTF8Prefix(data)
-	if valid < len(data) {
-		p.pendingBytes = append(p.pendingBytes, data[valid:]...)
-		data = data[:valid]
-	}
-	for _, r := range string(data) {
-		p.line.WriteRune(r)
-		if r == '\n' {
-			p.processLine(p.line.String())
-			p.line.Reset()
-			if p.failed {
-				return
-			}
+	for len(data) > 0 {
+		if !utf8.FullRuneInString(data) {
+			p.pendingBytes = append(p.pendingBytes, data...)
+			break
+		}
+		r, size := utf8.DecodeRuneInString(data)
+		data = data[size:]
+		p.feedRune(r)
+		if p.failed {
+			return
 		}
 	}
+	p.flushProseFragment()
 }
 
 // Close signals end of stream. Flushes buffered content and calls OnComplete.
@@ -130,20 +142,16 @@ func (p *StreamParser) Close() {
 	}
 	if len(p.pendingBytes) > 0 {
 		for _, r := range string(p.pendingBytes) {
-			p.line.WriteRune(r)
-			if r == '\n' {
-				p.processLine(p.line.String())
-				p.line.Reset()
-				if p.failed {
-					return
-				}
+			p.feedRune(r)
+			if p.failed {
+				return
 			}
 		}
 		p.pendingBytes = nil
 	}
 	if p.line.Len() > 0 {
 		p.processLine(p.line.String())
-		p.line.Reset()
+		p.resetLine()
 		if p.failed {
 			return
 		}
@@ -172,8 +180,10 @@ func (p *StreamParser) Abort(err error) {
 		return
 	}
 	p.pendingBytes = nil
-	p.line.Reset()
+	p.resetLine()
 	p.argBuf.Reset()
+	p.args = nil
+	p.argsBytes = 0
 	p.markdownFence = 0
 	p.markdownFenceLen = 0
 	p.state = streamStateProse
@@ -193,7 +203,8 @@ func (p *StreamParser) Err() error {
 	return p.err
 }
 
-// RawText returns the upstream assistant text accumulated by the parser.
+// RawText returns at most 64 KiB of upstream text, preserving useful prefix
+// and suffix diagnostics and explicitly marking any omitted bytes.
 func (p *StreamParser) RawText() string {
 	if p == nil {
 		return ""
@@ -244,23 +255,29 @@ func (p *StreamParser) processLogicalLine(line string) {
 }
 
 func (p *StreamParser) processProseLine(line string) {
+	if p.lineLiteral {
+		p.emitProse(line)
+		return
+	}
 	if p.markdownFence != 0 {
 		p.emitProse(line)
-		if isMarkdownFenceCloseLine(line, p.markdownFence, p.markdownFenceLen) {
+		if !p.lineEmitted && isMarkdownFenceCloseLine(line, p.markdownFence, p.markdownFenceLen) {
 			p.markdownFence = 0
 			p.markdownFenceLen = 0
 		}
 		return
 	}
-	if marker, count, ok := markdownFenceOpenLine(line); ok {
-		p.markdownFence = marker
-		p.markdownFenceLen = count
-		p.emitProse(line)
-		return
-	}
-	if isMarkdownIndentedCodeLine(line) {
-		p.emitProse(line)
-		return
+	if !p.lineEmitted {
+		if marker, count, ok := markdownFenceOpenLine(line); ok {
+			p.markdownFence = marker
+			p.markdownFenceLen = count
+			p.emitProse(line)
+			return
+		}
+		if isMarkdownIndentedCodeLine(line) {
+			p.emitProse(line)
+			return
+		}
 	}
 	if name, ok := parseToolOpenLineWithSettings(line, p.proto); ok {
 		p.startTool(name)
@@ -370,7 +387,9 @@ func (p *StreamParser) processEmbeddedProtocolLine(line string) bool {
 
 func (p *StreamParser) processArgLine(line string) {
 	if isArgCloseLineWithSettings(line, p.proto) {
-		p.args[p.argName] = trimOneTrailingNewline(p.argBuf.String())
+		value := trimOneTrailingNewline(p.argBuf.String())
+		p.args[p.argName] = value
+		p.argsBytes += len(p.argName) + len(value)
 		p.argName = ""
 		p.argBuf.Reset()
 		p.state = streamStateTool
@@ -382,6 +401,7 @@ func (p *StreamParser) processArgLine(line string) {
 func (p *StreamParser) startTool(name string) {
 	p.toolName = name
 	p.args = map[string]string{}
+	p.argsBytes = 0
 	p.argName = ""
 	p.argBuf.Reset()
 	p.state = streamStateTool
@@ -405,6 +425,7 @@ func (p *StreamParser) finishTool() {
 	p.toolIndex++
 	p.toolName = ""
 	p.args = nil
+	p.argsBytes = 0
 	p.state = streamStateToolCalls
 }
 

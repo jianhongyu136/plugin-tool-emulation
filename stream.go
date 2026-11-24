@@ -146,8 +146,11 @@ func (p *Plugin) executeStream(raw []byte) ([]byte, error) {
 			if originalStart != nil {
 				originalStart(index, callID, name)
 			}
+			if errChoice := emitter.Err(); errChoice != nil {
+				parser.Abort(errChoice)
+			}
 		}
-		parser = toolemu.NewStreamParserWithTagGroup(events, meta, prepared.cfg.config.FenceToken, prepared.cfg.config.TagGroup)
+		parser = toolemu.NewStreamParserWithLimits(events, meta, prepared.cfg.config.FenceToken, prepared.cfg.config.TagGroup, toolemu.StreamParserLimits{MaxBufferedBytes: prepared.cfg.config.MaxStreamBufferBytes})
 		parser.SetToolSpecs(prepared.policy.Tools)
 		pump := toolemu.UpstreamPump{Reader: reader, Shape: toolemu.ShapeOpenAIChat, Parser: parser}
 		_, errPump := pump.Run(ctx)

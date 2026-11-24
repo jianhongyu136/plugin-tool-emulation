@@ -12,10 +12,12 @@ plugins:
         # OpenAI-compatible group `gateway`: openai-compatible-gateway
         - models: ["legacy-*", "your-model-alias"]
       parse_retry: 1
+      # Raw streaming budget per tool call or unfinished protocol/fence line:
+      max_stream_buffer_bytes: 8388608 # 8 MiB; valid range 1024-134217728
       on_parse_failure: parse_failed_to_content
       prefix_cache: true
       cache_ttl: "5m"
-      # Optional fixed raw-protocol delimiter and tag names:
+      # Optional fixed raw-protocol delimiter and distinct tag names:
       # fence_token: <REDACTED_884c20176d137764>
       # tag_group:
       #   tool: CPA_TC

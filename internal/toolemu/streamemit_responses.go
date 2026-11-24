@@ -187,8 +187,8 @@ func (e *ResponsesStreamEmitter) onToolCallStart(index int, id, name string) {
 	if e.failed {
 		return
 	}
-	if e.choice.Kind == ToolChoiceKindNone || e.choice.Kind == ToolChoiceKindNamed && name != e.choice.Name {
-		e.emitValidationError(ToolChoiceValidationError{Choice: e.choice})
+	if !e.choice.allowsToolName(name) {
+		e.emitValidationError(ToolChoiceValidationError{Choice: e.choice, Parsed: Parsed{ToolCalls: []ParsedToolCall{{Name: name}}}})
 		return
 	}
 	if e.choice.DisableParallel && e.toolCallCount > 0 {

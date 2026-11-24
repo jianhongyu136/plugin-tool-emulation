@@ -78,6 +78,12 @@ func (p *UpstreamPump) Run(ctx context.Context) (UpstreamMeta, error) {
 			if errDispatch != nil {
 				return meta, errDispatch
 			}
+			if p.Parser.failed {
+				// A model-visible protocol diagnostic may already have ended
+				// output without a hard parser error. Do not drain upstream or
+				// falsely publish a native-completion callback in that case.
+				break
+			}
 			if done {
 				meta.StreamCompleted = true
 				break
@@ -168,9 +174,9 @@ func (p *UpstreamPump) processChatDelta(data string, meta *UpstreamMeta) bool {
 	}
 
 	finish := root.Get("choices.0.finish_reason")
-	if finish.Exists() && finish.String() != "" {
+	finished := finish.Exists() && finish.String() != ""
+	if finished {
 		meta.FinishOverride = finish.String()
-		p.chatFinished = true
 	}
 	if p.chatFinished {
 		return false
@@ -186,6 +192,11 @@ func (p *UpstreamPump) processChatDelta(data string, meta *UpstreamMeta) bool {
 	if content.Exists() && content.Type == ojson.String {
 		p.Parser.UpdateMeta(*meta)
 		p.Parser.Feed(content.String())
+	}
+	// A terminal choice can carry its final content or reasoning delta.
+	// Ignore only later content, while still collecting trailing usage.
+	if finished {
+		p.chatFinished = true
 	}
 	return false
 }

@@ -284,7 +284,11 @@ func extractGeminiToolsDoc(doc *ojson.Doc) ([]ToolSpec, ToolChoice, error) {
 			return true
 		}
 		decls.ForEach(func(_, d ojson.Result) bool {
-			schema := json.RawMessage(d.Get("parameters").Raw)
+			parameters := d.Get("parameters")
+			if !parameters.Exists() {
+				parameters = d.Get("parametersJsonSchema")
+			}
+			schema := json.RawMessage(parameters.Raw)
 			if len(schema) == 0 {
 				schema = json.RawMessage(`{}`)
 			}
@@ -381,10 +385,15 @@ func parseGeminiToolChoice(v ojson.Result) ToolChoice {
 		if !names.IsArray() {
 			names = v.Get("allowedFunctionNames")
 		}
-		if names.IsArray() && len(names.Array()) == 1 {
-			return ToolChoiceNamed(names.Array()[0].String())
+		items := names.Array()
+		if len(items) == 1 {
+			return ToolChoiceNamed(items[0].String())
 		}
-		return ToolChoiceRequired
+		choice := ToolChoice{Kind: ToolChoiceKindRequired}
+		for _, item := range items {
+			choice.AllowedNames = append(choice.AllowedNames, item.String())
+		}
+		return choice
 	}
 	return ToolChoiceAuto
 }

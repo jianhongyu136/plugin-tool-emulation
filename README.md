@@ -19,8 +19,11 @@ protocol, with streaming responses and cache-friendly prompt prefixes.
 - Supports incremental streaming, split protocol tags, EOF flushing, reasoning
   deltas, and explicit upstream stream-handle cleanup.
 - Retries malformed non-streaming responses without changing the fixed tool
-  prefix. Enforces `none`, `required`, named choice, parallel limits, and declared
-  names. It never executes tools itself: the client still owns tool execution.
+  prefix. Enforces `none`, `required`, named choice, Gemini allowed-name subsets,
+  parallel limits, and declared names. It never executes tools itself: the client still owns tool execution.
+- Forwards ordinary prose without waiting for a newline or EOF. Protocol candidates
+  and Markdown fence prefixes retain only the necessary decision buffer. Arguments
+  still emit at tool-block close; structured raw argument JSON is not repaired or validated.
 
 ## Compatibility
 
@@ -95,6 +98,7 @@ plugins:
       rules:
         - models: ["your-model-alias"]
       parse_retry: 1
+      max_stream_buffer_bytes: 8388608
       on_parse_failure: parse_failed_to_content
       prefix_cache: true
       cache_ttl: "5m"
@@ -114,16 +118,20 @@ Additional options:
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `parse_retry` | `1` | Additional non-streaming parse attempts, range 0–8 |
+| `max_stream_buffer_bytes` | `8388608` (8 MiB) | Raw buffer budget per unfinished tool call or protocol/fence line, range 1024–134217728 bytes; exceeding it aborts upstream without truncating arguments |
 | `on_parse_failure` | `parse_failed_to_content` | `error` returns failure after syntax retry exhaustion; tool-choice/declaration violations always fail |
 | `prefix_cache` | `true` | Fixed protocol block and explicit Claude breakpoints |
 | `cache_ttl` | `5m` | `5m` or `1h`; upstream support required |
 | `fence_token` | fixed built-in delimiter | Optional 4–32 character ASCII delimiter; never generate it per request |
-| `tag_group` | CPA_TC / CPA_TA / CPA_TR | Optional `{tool, arg, result}` protocol tag names |
+| `tag_group` | CPA_TC / CPA_TA / CPA_TR | Optional `{tool, arg, result}` protocol tag names; must remain distinct after defaults |
 
 Configuration snapshots are immutable and swapped only after successful
 validation. Unknown host-owned metadata such as `store` is ignored. Streaming
 responses are not restarted after emitting partial output; retry configuration
-applies only to non-streaming parsing.
+applies only to non-streaming parsing. Ordinary prose is forwarded incrementally,
+not capped by cumulative response length. Raw stream diagnostics retain at most
+64 KiB of prefix/tail text plus an explicit omission marker; this diagnostic
+budget is independent of the raw protocol buffer setting.
 
 ## Custom configuration page
 
@@ -143,7 +151,7 @@ reads and writes use `/v8/management/config/plugins/configs/tool-emulation`.
 
 Enter the **management key**, not a client API key, and choose **Connect and load**.
 The page includes enable/priority controls, reorderable model-rule editing, parse
-retry/fallback choices, cache TTL controls, advanced delimiter/tag settings, and
+retry/fallback choices, a streaming buffer limit, cache TTL controls, advanced delimiter/tag settings, and
 a pending-configuration preview. Saving preserves plugin fields not shown in the
 form and uses the host ETag/If-Match mechanism to avoid overwriting concurrent
 edits. Reloading prompts before discarding unsaved changes.
@@ -186,7 +194,11 @@ retry behavior, tool-choice validation, configuration updates, and cache markers
 
 Additional HTTP integration tests are available with the `integration` build tag.
 They require a prepared host executable and plugin libraries; fixture locations
-are defined in [the integration test setup](<main_integration_test.go>).
+are defined in [the integration test setup](<main_integration_test.go>). To use
+freshly built libraries in an isolated directory without replacing installed
+plugins, set `TOOLEMU_INTEGRATION_ROOT` to a directory containing `.test-bin/`
+and `dist/`; optional privacy fixtures are resolved from the sibling
+`plugin-privacy-filter/dist/` directory.
 
 The release workflow embeds the Git tag as the plugin version and publishes
 shared libraries for Linux amd64/arm64 and Windows amd64.

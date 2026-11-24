@@ -50,6 +50,7 @@
             <div class="section-head"><div><h2 id="parse-heading">解析策略</h2><p>只对非流式解析重试；已输出的流式内容不会重新开始。</p></div></div>
             <label class="field" for="parse-retry"><span>额外解析重试次数</span><input id="parse-retry" type="number" min="0" max="8" step="1" value="1"><small>允许 0–8 次，默认 1。</small></label>
             <label class="field" for="parse-failure"><span>语法解析失败后</span><select id="parse-failure"><option value="parse_failed_to_content">作为普通正文返回</option><option value="error">返回错误</option></select><small>工具选择约束及未声明工具违规始终返回错误。</small></label>
+            <label class="field" for="stream-buffer-bytes"><span>流式原始缓冲上限（字节）</span><input id="stream-buffer-bytes" type="number" min="1024" max="134217728" step="1" value="8388608"><small>默认 8 MiB。限制单次工具调用或未完成协议行；超限终止，不截断参数。普通正文增量输出，诊断文本另限 64 KiB。</small></label>
           </section>
           <section class="card" aria-labelledby="cache-heading">
             <div class="section-head"><div><h2 id="cache-heading">前缀缓存</h2><p>固定工具协议块，不将每轮选择约束放进固定前缀。</p></div></div>
@@ -63,7 +64,7 @@
           <summary><span>协议高级设置</span><small>通常无需修改；变更会使已有缓存前缀失效。</small></summary>
           <label class="field" for="fence-token"><span>固定协议分隔符</span><input id="fence-token" type="text" autocomplete="off" spellcheck="false" placeholder="留空使用内置默认值"><small>4–32 位 ASCII 字母、数字、下划线或连字符。不要每轮随机生成。</small></label>
           <div class="three-columns"><label class="field" for="tag-tool"><span>工具标签</span><input id="tag-tool" type="text" placeholder="CPA_TC" spellcheck="false"></label><label class="field" for="tag-arg"><span>参数标签</span><input id="tag-arg" type="text" placeholder="CPA_TA" spellcheck="false"></label><label class="field" for="tag-result"><span>结果标签</span><input id="tag-result" type="text" placeholder="CPA_TR" spellcheck="false"></label></div>
-          <p class="help">标签以 ASCII 字母开头，最多 64 位，可包含数字、下划线和连字符；留空使用默认值。</p>
+          <p class="help">标签以 ASCII 字母开头，最多 64 位，可包含数字、下划线和连字符；留空使用默认值。应用默认值后，三个标签必须互不相同。</p>
         </details>
 
         <details class="card preview"><summary><span>待保存配置预览</span><small>仅修改本插件；保留未显示的配置字段。</small></summary><pre id="config-preview" tabindex="0"></pre></details>
