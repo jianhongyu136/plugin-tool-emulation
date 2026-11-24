@@ -1,0 +1,23 @@
+# Merge this subtree into an existing CLIProxyAPI configuration.
+plugins:
+  enabled: true
+  dir: "plugins"
+  configs:
+    tool-emulation:
+      enabled: true
+      priority: 10
+      rules:
+        # Optional exact native provider key. Omit it for ordinary host routing.
+        # Built-ins: claude, codex, gemini, ...
+        # OpenAI-compatible group `gateway`: openai-compatible-gateway
+        - models: ["legacy-*", "your-model-alias"]
+      parse_retry: 1
+      on_parse_failure: parse_failed_to_content
+      prefix_cache: true
+      cache_ttl: "5m"
+      # Optional fixed raw-protocol delimiter and tag names:
+      # fence_token: <REDACTED_884c20176d137764>
+      # tag_group:
+      #   tool: CPA_TC
+      #   arg: CPA_TA
+      #   result: CPA_TR

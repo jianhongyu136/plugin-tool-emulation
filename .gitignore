@@ -1,0 +1,8 @@
+/dist/
+/.test-bin/
+*.dll
+*.so
+*.dylib
+*.exe
+*.test
+coverage.out

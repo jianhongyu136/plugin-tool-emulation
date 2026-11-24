@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>工具模拟配置</title>
+  <link rel="stylesheet" href="assets/config.css">
+  <script src="assets/config.js" defer></script>
+</head>
+<body>
+  <main class="shell">
+    <header class="hero">
+      <div class="brand"><span class="brand-icon" aria-hidden="true">⌘</span><span>TOOL EMULATION</span><span class="badge">原生插件</span></div>
+      <h1>工具模拟配置</h1>
+      <p>为文本模型启用函数工具调用，并保持工具协议前缀稳定。</p>
+    </header>
+
+    <section class="card connection" aria-labelledby="connection-heading">
+      <div class="section-head"><div><h2 id="connection-heading">连接管理接口</h2><p>使用当前代理的管理密钥。密钥只在本页内存中使用，不写入 URL 或浏览器持久存储。</p></div><span id="connection-state" class="pill">未连接</span></div>
+      <form id="connection-form" class="connection-form">
+        <label class="field grow" for="management-key"><span>管理密钥</span><input id="management-key" type="password" autocomplete="off" spellcheck="false" placeholder="输入管理密钥" required></label>
+        <button id="load-button" class="button primary" type="submit">连接并加载</button>
+        <button id="disconnect-button" class="button secondary" type="button" hidden>断开连接</button>
+      </form>
+      <p class="endpoint">配置接口：<code id="endpoint"></code></p>
+    </section>
+
+    <div id="status" class="status" role="status" aria-live="polite">请连接管理接口后编辑配置。</div>
+
+    <form id="config-form">
+      <fieldset id="settings" disabled>
+        <section class="card" aria-labelledby="basic-heading">
+          <div class="section-head"><div><h2 id="basic-heading">基本设置</h2><p>插件实例的启用状态与执行优先级。</p></div></div>
+          <div class="basic-grid"><label class="toggle"><input id="enabled" type="checkbox"><span><strong>启用工具模拟</strong><small>普通无工具请求仍走原生路径。</small></span></label><label class="field" for="priority"><span>优先级</span><input id="priority" type="number" step="1" value="0"><small>数值越高，插件优先级越高。</small></label></div>
+        </section>
+
+        <section class="card" aria-labelledby="rules-heading">
+          <div class="section-head"><div><h2 id="rules-heading">模型匹配规则</h2><p>从上到下取首个匹配。支持 <code>*</code> 和 <code>?</code>；未配置模型时不接管任何请求。</p></div><button id="add-rule" type="button" class="button secondary">＋ 添加规则</button></div>
+          <div class="catalog-toolbar"><div><strong>CPA 模型目录</strong><p id="catalog-status" role="status" aria-live="polite">连接后自动获取凭据的已登记模型；也可使用客户端 API key 获取完整调用目录。</p></div><button id="refresh-catalog" class="button secondary" type="button">刷新模型</button></div>
+          <details class="catalog-access"><summary>获取完整调用目录（可选）</summary><label class="field" for="model-api-key"><span>客户端 API key</span><input id="model-api-key" type="password" autocomplete="off" spellcheck="false" placeholder="CPA 客户端 API key，不是上游密钥"><small>用于同源 /v1/models，覆盖内联 API key 提供商的模型。不会读取宿主保存的密钥，也不会保存此密钥。</small></label></details>
+          <datalist id="native-providers"></datalist>
+          <div id="rules"></div>
+          <p id="empty-rules" class="empty-state">未选择模型：工具模拟不会接管任何请求。添加规则并选择模型；仅在确实需要全局启用时显式填写 *。</p>
+          <div class="note">提供商可留空，由宿主正常路由。指定时需使用原生键，例如 <code>claude</code>、<code>codex</code>，或 <code>openai-compatible-gateway</code>，而不是显示名。</div>
+        </section>
+
+        <div class="two-columns">
+          <section class="card" aria-labelledby="parse-heading">
+            <div class="section-head"><div><h2 id="parse-heading">解析策略</h2><p>只对非流式解析重试；已输出的流式内容不会重新开始。</p></div></div>
+            <label class="field" for="parse-retry"><span>额外解析重试次数</span><input id="parse-retry" type="number" min="0" max="8" step="1" value="1"><small>允许 0–8 次，默认 1。</small></label>
+            <label class="field" for="parse-failure"><span>语法解析失败后</span><select id="parse-failure"><option value="parse_failed_to_content">作为普通正文返回</option><option value="error">返回错误</option></select><small>工具选择约束及未声明工具违规始终返回错误。</small></label>
+          </section>
+          <section class="card" aria-labelledby="cache-heading">
+            <div class="section-head"><div><h2 id="cache-heading">前缀缓存</h2><p>固定工具协议块，不将每轮选择约束放进固定前缀。</p></div></div>
+            <label class="toggle"><input id="prefix-cache" type="checkbox" checked><span><strong>启用稳定前缀与缓存提示</strong><small>Claude 使用显式缓存断点。</small></span></label>
+            <label class="field" for="cache-ttl"><span>Claude 缓存 TTL</span><select id="cache-ttl"><option value="5m">5 分钟 · 默认</option><option value="1h">1 小时 · 需上游支持</option></select></label>
+            <div class="note">保证前缀稳定和提示合法，不保证无条件云端命中；实际命中仍受模型、长度、TTL 及缓存池影响。</div>
+          </section>
+        </div>
+
+        <details class="card advanced">
+          <summary><span>协议高级设置</span><small>通常无需修改；变更会使已有缓存前缀失效。</small></summary>
+          <label class="field" for="fence-token"><span>固定协议分隔符</span><input id="fence-token" type="text" autocomplete="off" spellcheck="false" placeholder="留空使用内置默认值"><small>4–32 位 ASCII 字母、数字、下划线或连字符。不要每轮随机生成。</small></label>
+          <div class="three-columns"><label class="field" for="tag-tool"><span>工具标签</span><input id="tag-tool" type="text" placeholder="CPA_TC" spellcheck="false"></label><label class="field" for="tag-arg"><span>参数标签</span><input id="tag-arg" type="text" placeholder="CPA_TA" spellcheck="false"></label><label class="field" for="tag-result"><span>结果标签</span><input id="tag-result" type="text" placeholder="CPA_TR" spellcheck="false"></label></div>
+          <p class="help">标签以 ASCII 字母开头，最多 64 位，可包含数字、下划线和连字符；留空使用默认值。</p>
+        </details>
+
+        <details class="card preview"><summary><span>待保存配置预览</span><small>仅修改本插件；保留未显示的配置字段。</small></summary><pre id="config-preview" tabindex="0"></pre></details>
+      </fieldset>
+      <footer class="actions"><div><strong id="dirty-state">尚未加载配置</strong><small>配置写入宿主，由宿主负责保存与重载。</small></div><div class="action-buttons"><button id="reload-button" type="button" class="button secondary" disabled>重新加载</button><button id="save-button" type="submit" class="button primary" disabled>保存配置</button></div></footer>
+    </form>
+    <noscript><div class="status error">此配置页面需要启用 JavaScript。</div></noscript>
+  </main>
+</body>
+</html>
